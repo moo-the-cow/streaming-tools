@@ -17,11 +17,13 @@
 const host = '127.0.0.1'; //mandatory
 const port = '4455'; //mandatory
 const mediaSourceName = 'MEDIA_SOURCE_NAME'; //mandatory
+const REFRESH_COOLDOWN_MS = 3000; // 3 second cooldown to prevent potential spamming
 let obs = null;
 let currentSettings = null;
 let isRefreshing = false;
 let allScenes = [];
 let currentSearchIndex = 0;
+let lastRefreshTime = 0;
 /* RIST STATS */
 const outputTextElement = document.getElementById("output");
 const socket = new WebSocket('ws://[RIST-STATS-URL]:[RIST-STATS-PORT]'); // default port: 8683
@@ -78,20 +80,30 @@ const contactServer = () => {
 
 //OBS METHODS
 function triggerRefresh() {
+	const now = Date.now();
+	const timeSinceLastRefresh = now - lastRefreshTime;
+	
 	if (isRefreshing) {
 		console.log('Refresh already in progress...');
 		return;
 	}
+	
+	if (timeSinceLastRefresh < REFRESH_COOLDOWN_MS) {
+		const remainingTime = Math.ceil((REFRESH_COOLDOWN_MS - timeSinceLastRefresh) / 1000);
+		console.log(`Please wait ${remainingTime} more seconds before refreshing again`);
+		updateStatus(`Please wait ${remainingTime}s...`);
+		return;
+	}
+	
 	connectAndRefresh();
 }
 
 function connectAndRefresh() {
 	isRefreshing = true;
-	currentSearchIndex = 0; // Reset search index
+	currentSearchIndex = 0;
 	console.log('Connecting to OBS...');
 	updateStatus('Connecting to OBS...');
 	
-	// Close existing connection if any
 	if (obs && obs.readyState === WebSocket.OPEN) {
 		obs.close();
 	}
@@ -102,7 +114,6 @@ function connectAndRefresh() {
 		console.log('Connected to OBS WebSocket');
 		updateStatus('Connected, identifying...');
 		
-		// Send identify message WITHOUT authentication
 		const identifyMessage = {
 			"op": 1,
 			"d": {
@@ -119,11 +130,11 @@ function connectAndRefresh() {
 		const data = JSON.parse(event.data);
 		console.log('Received:', data.op);
 		
-		if (data.op === 2) { // Identified - successful
+		if (data.op === 2) {
 			console.log('Identification successful!');
 			updateStatus('Identified, getting all scenes...');
 			getAllScenes();
-		} else if (data.op === 7) { // RequestResponse
+		} else if (data.op === 7) {
 			handleRequestResponse(data);
 		}
 	};
@@ -136,7 +147,6 @@ function connectAndRefresh() {
 	
 	obs.onclose = function(event) {
 		console.log('Connection closed:', event.code, event.reason);
-		// Always reset when connection closes
 		resetRefreshState();
 	};
 }
@@ -163,14 +173,11 @@ function getAllScenes() {
 function searchAllScenesForMediaSource() {
 	console.log(`Searching ${allScenes.length} scenes for "${mediaSourceName}"`);
 	updateStatus(`Searching ${allScenes.length} scenes...`);
-	
-	// Start searching from the first scene
 	searchNextScene();
 }
 
 function searchNextScene() {
 	if (currentSearchIndex >= allScenes.length) {
-		// Media source not found in any scene
 		console.log(`"${mediaSourceName}" not found in any scene`);
 		updateStatus('Media source not found in any scene');
 		setTimeout(() => {
@@ -253,12 +260,10 @@ function handleRequestResponse(data) {
 				
 				if (mediaSourceExists) {
 					const sceneName = allScenes[sceneIndex].sceneName;
-					console.log(`Found "${mediaSourceName}" in scene "${sceneName}" - STOPPING SEARCH`);
+					console.log(`Found "${mediaSourceName}" in scene "${sceneName}"`);
 					updateStatus(`Found in ${sceneName}, getting settings...`);
 					getCurrentSettings();
-					// DON'T continue searching - we found it!
 				} else {
-					// Not found in this scene, search next one
 					currentSearchIndex++;
 					searchNextScene();
 				}
@@ -277,7 +282,7 @@ function handleRequestResponse(data) {
 			if (requestId === 'refreshMediaSource') {
 				console.log('Media source refreshed successfully!');
 				updateStatus('Media source refreshed successfully!');
-				// Don't close immediately, let user see success message
+				lastRefreshTime = Date.now();
 				setTimeout(() => {
 					if (obs) obs.close();
 				}, 2000);
@@ -294,7 +299,6 @@ function updateStatus(message) {
 	console.log('Status:', message);
 }
 
-// Make functions globally available
 window.triggerRefresh = triggerRefresh;
 
 console.log('OBS Media Refresher loaded. Call triggerRefresh() to start.');
