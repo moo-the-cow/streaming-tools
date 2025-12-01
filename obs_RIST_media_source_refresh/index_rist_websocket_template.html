@@ -36,50 +36,47 @@ const socket = new WebSocket("ws://"+statsUrl); // default port: 8683
 socket.addEventListener('open', function (event) {
 	socket.send('Connection Established');
 });
-if(config.enableStatsOverlay)
-{
-	socket.addEventListener('message', function (event) {
-		data = JSON.parse(event.data);
-		if(typeof data["receiver-stats"] === "undefined" || data["receiver-stats"] == null)
+socket.addEventListener('message', function (event) {
+	data = JSON.parse(event.data);
+	if(typeof data["receiver-stats"] === "undefined" || data["receiver-stats"] == null || !config.enableStatsOverlay)
+	{
+		outputTextElement.innerText = "";
+	}
+	else
+	{
+		let brValue = 0;
+		let rttValue = 0;
+		let peers_counter = 0;
+		let dead_peers = 0;
+		data["receiver-stats"].flowinstant.peers.forEach((peer)=> {
+			if(peer.stats.bitrate !== undefined)
+			{
+				brValue += Math.round(peer.stats.bitrate / 1024);
+			}
+			if(peer.stats.rtt !== undefined)
+			{
+				rttValue = Math.round(peer.stats.rtt);
+			}
+			if(peer.dead !== undefined)
+			{
+				if(peer.dead == 1)
+				{
+					dead_peers++;
+				}
+			}
+			peers_counter++;
+		});
+		if(peers_counter == dead_peers)
 		{
 			outputTextElement.innerText = "";
+			connectAndRefresh();
 		}
 		else
 		{
-			let brValue = 0;
-			let rttValue = 0;
-			let peers_counter = 0;
-			let dead_peers = 0;
-			data["receiver-stats"].flowinstant.peers.forEach((peer)=> {
-				if(peer.stats.bitrate !== undefined)
-				{
-					brValue += Math.round(peer.stats.bitrate / 1024);
-				}
-				if(peer.stats.rtt !== undefined)
-				{
-					rttValue = Math.round(peer.stats.rtt);
-				}
-				if(peer.dead !== undefined)
-				{
-					if(peer.dead == 1)
-					{
-						dead_peers++;
-					}
-				}
-				peers_counter++;
-			});
-			if(peers_counter == dead_peers)
-			{
-				outputTextElement.innerText = "";
-				connectAndRefresh();
-			}
-			else
-			{
-				outputTextElement.innerText = `bitrate: ${brValue} rtt: ${rttValue}`;
-			}
+			outputTextElement.innerText = `bitrate: ${brValue} rtt: ${rttValue}`;
 		}
-	});
-}
+	}
+});
 const contactServer = () => {
   socket.send("Initialize");
 }

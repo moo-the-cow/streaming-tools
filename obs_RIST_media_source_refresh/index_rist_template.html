@@ -29,51 +29,48 @@ let isRefreshing = false;
 let allScenes = [];
 let currentSearchIndex = 0;
 let lastRefreshTime = 0;
-if(config.enableStatsOverlay)
-{
-	setInterval(function() {
-		fetch(statsUrl)
-			.then(response => response.json())
-			.then(data => {
-				if (typeof data["receiver-stats"] === "undefined" || data["receiver-stats"] == null) {
-					document.getElementById('output').textContent = "";
-				} else {
-					let brValue = 0;
-					let rttValue = 0;
-					let peers_counter = 0;
-					let dead_peers = 0;
-					data["receiver-stats"].flowinstant.peers.forEach((peer) => {
-						if (peer.stats.bitrate !== undefined) {
-							brValue += Math.round(peer.stats.bitrate / 1024);
-						}
-						if (peer.stats.rtt !== undefined) {
-							rttValue = Math.round(peer.stats.rtt);
-						}
-						if(peer.dead !== undefined)
+setInterval(function() {
+	fetch(statsUrl)
+		.then(response => response.json())
+		.then(data => {
+			if (typeof data["receiver-stats"] === "undefined" || data["receiver-stats"] == null || !config.enableStatsOverlay) {
+				document.getElementById('output').textContent = "";
+			} else {
+				let brValue = 0;
+				let rttValue = 0;
+				let peers_counter = 0;
+				let dead_peers = 0;
+				data["receiver-stats"].flowinstant.peers.forEach((peer) => {
+					if (peer.stats.bitrate !== undefined) {
+						brValue += Math.round(peer.stats.bitrate / 1024);
+					}
+					if (peer.stats.rtt !== undefined) {
+						rttValue = Math.round(peer.stats.rtt);
+					}
+					if(peer.dead !== undefined)
+					{
+						if(peer.dead == 1)
 						{
-							if(peer.dead == 1)
-							{
-								dead_peers++;
-							}
+							dead_peers++;
 						}
-						peers_counter++;
-					});
-					if(peers_counter == dead_peers)
-					{
-						document.getElementById('output').textContent = "";
-						connectAndRefresh();
 					}
-					else
-					{
-						document.getElementById('output').textContent = `bitrate: ${brValue} rtt: ${rttValue}`;
-					}
+					peers_counter++;
+				});
+				if(peers_counter == dead_peers)
+				{
+					document.getElementById('output').textContent = "";
+					connectAndRefresh();
 				}
-			})
-			.catch(error => {
-				console.error('Error fetching stats:', error);
-			});
-	}, 1000);
-}
+				else
+				{
+					document.getElementById('output').textContent = `bitrate: ${brValue} rtt: ${rttValue}`;
+				}
+			}
+		})
+		.catch(error => {
+			console.error('Error fetching stats:', error);
+		});
+}, 1000);
 //OBS METHODS
 function triggerRefresh() {
 	const now = Date.now();
