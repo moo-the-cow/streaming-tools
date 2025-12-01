@@ -33,7 +33,7 @@ setInterval(function() {
 	fetch(statsUrl)
 		.then(response => response.json())
 		.then(data => {
-			if (typeof data["receiver-stats"] === "undefined" || data["receiver-stats"] == null || !config.enableStatsOverlay) {
+			if (typeof data["receiver-stats"] === "undefined" || data["receiver-stats"] == null) {
 				document.getElementById('output').textContent = "";
 			} else {
 				let brValue = 0;
@@ -60,6 +60,10 @@ setInterval(function() {
 				{
 					document.getElementById('output').textContent = "";
 					connectAndRefresh();
+				}
+				else if(!config.enableStatsOverlay)
+				{
+					outputTextElement.innerText = "";
 				}
 				else
 				{

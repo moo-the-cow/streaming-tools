@@ -38,7 +38,7 @@ socket.addEventListener('open', function (event) {
 });
 socket.addEventListener('message', function (event) {
 	data = JSON.parse(event.data);
-	if(typeof data["receiver-stats"] === "undefined" || data["receiver-stats"] == null || !config.enableStatsOverlay)
+	if(typeof data["receiver-stats"] === "undefined" || data["receiver-stats"] == null)
 	{
 		outputTextElement.innerText = "";
 	}
@@ -70,6 +70,10 @@ socket.addEventListener('message', function (event) {
 		{
 			outputTextElement.innerText = "";
 			connectAndRefresh();
+		}
+		else if(!config.enableStatsOverlay)
+		{
+			outputTextElement.innerText = "";
 		}
 		else
 		{
