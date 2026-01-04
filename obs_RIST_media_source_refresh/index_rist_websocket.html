@@ -160,6 +160,11 @@ function searchNextScene() {
     });
 }
 
+/**
+ * RELEVANT CHANGES: handleRequestResponse
+ * We introduce a deliberate delay before triggering GetInputSettings 
+ * to allow OBS threads to settle.
+ */
 function handleRequestResponse(data) {
     const { requestType, requestId, responseData } = data.d;
     
@@ -168,21 +173,51 @@ function handleRequestResponse(data) {
             allScenes = responseData.scenes;
             searchNextScene();
             break;
+            
         case 'GetSceneItemList':
             if (responseData.sceneItems.some(item => item.sourceName === mediaSourceName)) {
-                safeSend({ "op": 6, "d": { "requestType": "GetInputSettings", "requestId": "getSet", "requestData": { "inputName": mediaSourceName } } });
+                // STABILITY DELAY: Wait 2 seconds before requesting settings 
+                // to avoid overwhelming the librist/avformat threads.
+                console.log(`Source "${mediaSourceName}" found. Waiting 2s for safety...`);
+                
+                setTimeout(() => {
+                    safeSend({ 
+                        "op": 6, 
+                        "d": { 
+                            "requestType": "GetInputSettings", 
+                            "requestId": "getSet", 
+                            "requestData": { "inputName": mediaSourceName } 
+                        } 
+                    });
+                }, 2000); 
+
             } else {
                 currentSearchIndex++;
                 searchNextScene();
             }
             break;
+            
         case 'GetInputSettings':
             currentSettings = responseData.inputSettings;
-            safeSend({ "op": 6, "d": { "requestType": "SetInputSettings", "requestId": "final", "requestData": { "inputName": mediaSourceName, "inputSettings": currentSettings } } });
+            // Additional small buffer before the final "heavy" re-init command
+            setTimeout(() => {
+                safeSend({ 
+                    "op": 6, 
+                    "d": { 
+                        "requestType": "SetInputSettings", 
+                        "requestId": "final", 
+                        "requestData": { 
+                            "inputName": mediaSourceName, 
+                            "inputSettings": currentSettings 
+                        } 
+                    } 
+                });
+            }, 500);
             break;
+            
         case 'SetInputSettings':
             lastRefreshTime = Date.now();
-            console.log("Refresh Complete");
+            console.log("Refresh Complete (Safe Delay Mode)");
             setTimeout(() => obs?.close(), 2000);
             break;
     }
