@@ -189,7 +189,7 @@ function handleRequestResponse(data) {
                             "requestData": { "inputName": mediaSourceName } 
                         } 
                     });
-                }, 2000); 
+                }, 2500); 
 
             } else {
                 currentSearchIndex++;
@@ -218,7 +218,7 @@ function handleRequestResponse(data) {
         case 'SetInputSettings':
             lastRefreshTime = Date.now();
             console.log("Refresh Complete (Safe Delay Mode)");
-            setTimeout(() => obs?.close(), 2000);
+            setTimeout(() => obs?.close(), 2500);
             break;
     }
 }
