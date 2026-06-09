@@ -1,0 +1,407 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html><head>
+<title>COW JavaScript implementation</title>
+<meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+<style type="text/css">
+UNKNOWN {
+	COLOR: #000000; FONT-FAMILY: verdana, sans-serif
+}
+BODY {
+	FONT-FAMILY: verdana, sans-serif
+}
+pre {background:#eeeeee;border:1px solid #777777;padding:4px}
+
+</style>
+<script type="text/javascript">
+<!--
+
+var result = ""
+
+function print(text) {
+	result = result + text
+}
+
+function newline(text) {
+	result = result + "\n"
+}
+
+function printChar(code)  {
+	print(String.fromCharCode(code))
+}
+
+function printNumber(number) {
+	print(number)
+	newline()
+}
+
+function exec(instruction) {
+	switch (instruction) {
+		// moo
+		case 0:
+			if (progPos == 0) {
+				return false
+			} else {
+				progPos--  // skip previous command.
+				level = 1
+				while (level > 0) {
+					if (progPos == 0) {
+						break
+					}
+					progPos--
+					if (cowProgram[progPos] == 0) {
+						level++
+					} else if (cowProgram[progPos] == 7) {  // look for MOO
+						level--
+					}
+				}
+				if (level != 0) {
+					return false
+				}
+				return exec(cowProgram[progPos])
+			}
+			break
+    
+		// mOo
+		case 1:
+			if (memPos == 0) {
+				return false
+			} else {
+				memPos--
+			}
+			break
+
+		// moO
+		case 2:
+			memPos++
+			if (memPos == memory.length) {
+				memory.push(0)
+			}
+			break
+    
+		// mOO    
+		case 3:
+			if (memory[memPos] == 3) {
+				return false
+			} else {
+				return exec(memory[memPos])
+			}
+			break
+    
+		// Moo
+		case 4:
+			if (memory[memPos] != 0) {
+				printChar(memory[memPos])
+			} else {
+				memory[memPos] = window.prompt("please enter a character").charCodeAt(0);
+			}
+			break
+		
+		// MOo
+		case 5:
+			memory[memPos]--
+			break
+		
+		// MoO
+		case 6:
+			memory[memPos]++
+			break
+		
+		// MOO
+		case 7:
+			if (memory[memPos] == 0) {
+				var level = 1
+				var prev = 0
+				progPos++  // have to skip past next command when looking for next moo.
+				if (progPos == cowProgram.length) {
+					break
+				}
+				while (level > 0) {
+					prev = cowProgram[progPos]
+					progPos++
+					if (progPos == cowProgram.length) {
+						break
+					}
+					if (cowProgram[progPos] == 7) {
+						level++
+					} else {
+						if (cowProgram[progPos] == 0) {  // look for moo command.
+							level--
+							if (prev == 7) {
+								level--
+							}
+						}
+					}
+				}
+				if (level != 0) {
+					return false
+				}
+			}
+			break
+		
+		// OOO
+		case 8:
+			memory[memPos] = 0
+			break
+		
+		// MMM
+		case 9:
+			if (registerVal == undefined) {
+				registerVal = memory[memPos]
+			} else {
+				memory[memPos] = registerVal
+				registerVal = undefined
+			}
+			break
+		
+		// OOM
+		case 10:
+			printNumber(memory[memPos])
+			break
+		
+		// oom
+		case 11:
+			memory[memPos] = parseFloat(window.prompt("please enter a number"))
+			break
+		
+		// bad stuff
+		default:
+			return false
+	}
+	progPos++
+	return true
+}
+
+function executeProgram() {
+	// read program
+	result = ""
+	var tokens = [ "moo", "mOo", "moO", "mOO", "Moo", "MOo",
+		"MoO", "MOO", "OOO", "MMM", "OOM", "oom"]
+	cowIn = document.getElementById("CowProgram")
+	var token = "   "
+	cowProgram = new Array()
+	for (var i = 0; i < cowIn.value.length; i++) {
+		token = token.substring(1) + cowIn.value.charAt(i)
+		for (var j = 0; j < tokens.length; j++) {
+			if (tokens[j] == token) {
+				cowProgram.push(j)
+				token = "   "
+				break
+			}
+		}
+	}
+
+	// execute
+	progPos = 0
+	registerVal = undefined
+	memory = new Array()
+	memPos = 0
+	memory.push(0)
+	while (progPos != cowProgram.length) {
+		if (!exec(cowProgram[progPos])) {
+			break
+		}
+	}
+	newline()
+	print("Done.")
+	cowOut = document.getElementById("CowResult")
+	cowOut.value = result
+}
+
+function generateProgram() {
+	// initial program: store 8, 16, 32 and 64 in memory positions 1, 2, 3 and 4, current memory position is 5
+	var program = "OOOMoOMoOMoOMoOMoOMoOMoOMoOMMMmoOMMMMMMmoOMMMMOOMOomOoMoOmoOmoomOoMMMmoOMMMMMMmoOMMMMOOMOomOoMoOmoOmoomOoMMMmoOMMMMMMmoOMMMMOOMOomOoMoOmoOmoo"
+
+	cowOut = document.getElementById("CowResult")
+	for (var i = 0; i < cowOut.value.length; i++) {
+		// next character, ignore non-ASCII
+		var c = cowOut.value.charCodeAt(i)
+		if (c > 127) continue;
+		
+		// clear position 5 and 6
+		program += "OOOmoOOOOmOo"
+		
+		// add bits
+		for (var j = 6; j > 3; j--) {
+			var mask = 1 << j
+			if (c > mask) {
+				switch (j) {
+					case 6:
+						// position 5 = 64
+						program += "mOoMMMmoOMMM"
+						break
+					case 5:
+						// position 5 = 32
+						program += "mOomOoMMMmoOmoOMMM"
+						break
+					case 4:
+						// position 5 = 16
+						program += "mOomOomOoMMMmoOmoOmoOMMM"
+						break
+				}
+				// add position 5 and 6, result in position 6
+				program += "MOOMOomoOMoOmOomoo"
+				c -= mask
+			}
+		}
+		
+		// add rest to position 6 and print
+		program += "moO"
+		for (var j = 0; j < c; j++) {
+			program += "MoO"
+		}
+		program += "MoomOo"
+	}
+
+	// split in lines with max 66 characters
+	var programFormatted = ""
+	while (true) {
+		if (program.length > 66) {
+			programFormatted += program.substring(0, 66)
+			programFormatted += "\n"
+			program = program.substring(66)
+		} else {
+			programFormatted += program
+			programFormatted += "\n"
+			break
+		}
+	}
+	cowIn = document.getElementById("CowProgram")
+	cowIn.value = programFormatted
+}
+
+
+-->
+</script>
+</head>
+<body bgcolor="#FFFFFF">
+
+<h1>COW JavaScript implementation</h1>
+<p>This is a JavaScript interpreter for <a href="https://esolangs.org/wiki/COW">COW</a>.
+</p>
+<p>
+Paste the source code in the program text area and click on execute.
+An example from the author of the JavaScript program:
+</p>
+<pre>OOOMoOMoOMoOMoOMoOMoOMoOMoOMMMmoOMMMMMMmoOMMMMOOMOomOoMoOmoOmoomOo
+MMMmoOMMMMMMmoOMMMMOOMOomOoMoOmoOmoomOoMMMmoOMMMMMMmoOMMMMOOMOomOo
+MoOmoOmooOOOMoOMoOMoOMoOMoOMoOmOoMMMmoOmoOMMMMOOMOomOoMoOmoOmoomOo
+MoomOoMMMmoOMMMmOomOoMMMmoOmoOmoOMMMMOOMOomOoMoOmoOmoomOoMMMmoOMMM
+MoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoomOoMMMmoO
+MMMMoOMoomOoMMMmoOMMMMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoOMoo
+MOoMOoMOoMoo
+</pre>
+<p><b>Program:</b></p>
+<textarea id="CowProgram" rows="10" cols="80">OOOMoOMoOMoOMoOMoOMoOMoOMoOMMMmoOMMMMMMmoOMMMMOOMOomOoMoOmoOmoomOo
+MMMmoOMMMMMMmoOMMMMOOMOomOoMoOmoOmoomOoMMMmoOMMMMMMmoOMMMMOOMOomOo
+MoOmoOmooOOOmoOOOOmOomOomOoMMMmoOmoOMMMMOOMOomoOMoOmOomoomOomOomOo
+MMMmoOmoOmoOMMMMOOMOomoOMoOmOomoomoOMoOMoOMoOMoOMoOMoOMoomOoOOOmoO
+OOOmOomOomOoMMMmoOmoOMMMMOOMOomoOMoOmOomoomOomOomOoMMMmoOmoOmoOMMM
+MOOMOomoOMoOmOomoomoOMoOMoOMoOMoOMoOMoOMoOMoomOo
+</textarea>
+<p>Click this button to execute the program:<br>
+<input type="button" value="Execute" onclick="executeProgram()"></p>
+<p>Click this button to generate a COW program from the text in the result area below:<br>
+<input type="button" value="Generate" onclick="generateProgram()"></p>
+<p><b>Result:</b></p>
+<textarea id="CowResult" rows="10" cols="80">67
+Done.</textarea>
+<p>
+The "generate" algorithm uses the prolog of my program for creating
+16, 32 and 64 in three successive memory locations, then sums the
+values for each 1-bit of the character and finally increments for the rest.
+If the ASCII code of successive characters is not far apart, it could be
+optimized, like you can see in the commented version of my hand optimized code:
+</p>
+<pre>; store 8 to next location
+OOO MoO MoO MoO MoO MoO MoO MoO MoO
+
+; copy 8 to next location and load register with it
+MMM moO MMM MMM
+
+; copy 8 to next location
+moO MMM
+
+; loop: use the number in current memory location as a counter
+; for incrementing the previous memory location, which will be 16 after the loop
+MOO MOo mOo MoO moO moo
+
+; back to the previous location and copy 16 to next location
+mOo MMM moO MMM MMM
+
+; copy 16 to the next location
+moO MMM
+
+; same loop, but now resulting in 32
+MOO MOo mOo MoO moO moo
+
+; back to the previous location and copy 32 to next location
+mOo MMM moO MMM MMM
+
+; copy 32 to the next location
+moO MMM
+
+; same loop, but now resulting in 64
+MOO MOo mOo MoO moO moo
+
+; at this point there are 8, 16, 32 and 64 in memory positions 1, 2, 3 and 4
+; and the current memory position is 5
+; to make it easier to describe the rest of the program,
+; memory block 5 will be named A and block 6 is B
+
+; A=6
+OOO MoO MoO MoO MoO MoO MoO
+
+; B=64
+mOo MMM moO moO MMM
+
+; A=A+B (70, ASCII for 'F')
+MOO MOo mOo MoO moO moo
+
+; print the 'F'
+mOo Moo
+
+; next letter 'r', ASCII code 114
+; A=64
+mOo MMM moO MMM
+
+; B=32
+mOo mOo MMM moO moO moO MMM
+
+; A=A+B (96)
+MOO MOo mOo MoO moO moo
+
+; B=A (96)
+mOo MMM moO MMM
+
+; B=B+18 (114)
+MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO
+
+; print
+Moo
+
+; next character is 'a', ASCII code 97
+; B=A (96)
+mOo MMM moO MMM
+
+; increment and print
+; B=B+1
+MoO Moo
+
+; next character is 'n', ASCII code 110
+; B=A (96)
+mOo MMM moO MMM
+
+; B=B+14 (110)
+MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO MoO
+
+; print
+Moo
+
+; next character is 'k', ASCII code 107
+; B=B-3
+MOo MOo MOo Moo
+</pre>
+<hr>
+
+
+</body></html>
