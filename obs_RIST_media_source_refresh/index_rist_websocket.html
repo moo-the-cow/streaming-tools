@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>RTT and Bitrate</title>
+<meta charset="UTF-8">
+<style type="text/css">
+  h1 { color: #fff; text-shadow: 0 0 3px #000, 0 0 5px #000; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<h1 id="output"></h1>
+<div id="status" style="color: gray; font-size: 0.8em;"></div>
+<script type="text/javascript" src="config.js"></script>
+<script type="text/javascript">
+const host = config.host;
+const port = config.port;
+const mediaSourceName = config.mediaSourceName;
+const REFRESH_COOLDOWN_MS = config.refreshCooldownMs;
+const statsUrl = config.statsUrl;
+
+let obs = null;
+let statsSocket = null;
+let currentSettings = null;
+let isRefreshing = false;
+let allScenes = [];
+let currentSearchIndex = 0;
+let lastRefreshTime = 0;
+let hasSentRefresh = false;
+
+const outputTextElement = document.getElementById("output");
+
+// --- STATS WEBSOCKET WITH AUTO-RECONNECT ---
+function connectStats() {
+    console.log("Connecting to Stats WebSocket...");
+    statsSocket = new WebSocket("ws://" + statsUrl);
+
+    statsSocket.onopen = () => {
+        console.log("Stats Connection Established");
+        statsSocket.send('Connection Established');
+    };
+
+    statsSocket.onmessage = (event) => {
+        let data;
+        try {
+            // FIX: Guard against empty or malformed JSON strings
+            if (!event.data || event.data.trim() === "") return;
+            data = JSON.parse(event.data);
+        } catch (e) {
+            console.error("JSON Parse Error:", e, "Data received:", event.data);
+            return; 
+        }
+
+        if (!data["receiver-stats"]) {
+            outputTextElement.innerText = "";
+            return;
+        }
+
+        let brValue = 0, rttValue = 0, peers_counter = 0, dead_peers = 0;
+
+        try {
+            const peers = data["receiver-stats"].flowinstant.peers;
+            peers.forEach((peer) => {
+                if (peer.stats?.bitrate !== undefined) brValue += Math.round(peer.stats.bitrate / 1024);
+                if (peer.stats?.rtt !== undefined) rttValue = Math.round(peer.stats.rtt);
+                if (peer.dead === 1) dead_peers++;
+                peers_counter++;
+            });
+        } catch (e) {
+            console.error("Data structure error:", e);
+            return;
+        }
+
+        if (peers_counter > 0 && peers_counter === dead_peers) {
+            outputTextElement.innerText = "";
+            if (!hasSentRefresh) {
+                console.log("State Change: All peers dead. Triggering refresh.");
+                hasSentRefresh = true;
+                //connectAndRefresh();
+            }
+        } else {
+            if (hasSentRefresh) {
+                console.log("State Change: Peers healthy. Resetting latch.");
+                hasSentRefresh = false;
+            }
+            outputTextElement.innerText = config.enableStatsOverlay ? `bitrate: ${brValue} rtt: ${rttValue}` : "";
+        }
+    };
+
+    statsSocket.onclose = () => {
+        console.log("Stats Socket closed. Reconnecting in 5s...");
+        setTimeout(connectStats, 5000);
+    };
+
+    statsSocket.onerror = (err) => {
+        console.error("Stats Socket Error:", err);
+        statsSocket.close();
+    };
+}
+
+// --- OBS LOGIC ---
+function connectAndRefresh() {
+    const now = Date.now();
+    if (isRefreshing || (now - lastRefreshTime < REFRESH_COOLDOWN_MS)) {
+        console.log('Refresh blocked: Cooldown or Active');
+        return;
+    }
+
+    isRefreshing = true;
+    currentSearchIndex = 0;
+    
+    if (obs) {
+        obs.onclose = null; // Prevent callback loops
+        obs.close();
+    }
+
+    obs = new WebSocket(`ws://${host}:${port}`);
+
+    obs.onopen = () => {
+        obs.send(JSON.stringify({ "op": 1, "d": { "rpcVersion": 1, "eventSubscriptions": 0 } }));
+    };
+
+    obs.onmessage = (event) => {
+        try {
+            const res = JSON.parse(event.data);
+            if (res.op === 2) getAllScenes();
+            else if (res.op === 7) handleRequestResponse(res);
+        } catch(e) { console.error("OBS JSON Error", e); }
+    };
+
+    obs.onerror = () => resetRefreshState();
+    obs.onclose = () => resetRefreshState();
+}
+
+function safeSend(msg) {
+    if (obs && obs.readyState === WebSocket.OPEN) {
+        obs.send(JSON.stringify(msg));
+    } else {
+        console.error("OBS disconnected during process");
+        resetRefreshState();
+    }
+}
+
+function getAllScenes() {
+    safeSend({ "op": 6, "d": { "requestType": "GetSceneList", "requestId": "getAllScenes" } });
+}
+
+function searchNextScene() {
+    if (currentSearchIndex >= allScenes.length) {
+        updateStatus("Source not found.");
+        setTimeout(() => obs?.close(), 1000);
+        return;
+    }
+    safeSend({
+        "op": 6,
+        "d": {
+            "requestType": "GetSceneItemList",
+            "requestId": `searchScene_${currentSearchIndex}`,
+            "requestData": { "sceneName": allScenes[currentSearchIndex].sceneName }
+        }
+    });
+}
+
+/**
+ * RELEVANT CHANGES: handleRequestResponse
+ * We introduce a deliberate delay before triggering GetInputSettings 
+ * to allow OBS threads to settle.
+ */
+function handleRequestResponse(data) {
+    const { requestType, requestId, responseData } = data.d;
+    
+    switch (requestType) {
+        case 'GetSceneList':
+            allScenes = responseData.scenes;
+            searchNextScene();
+            break;
+            
+        case 'GetSceneItemList':
+            if (responseData.sceneItems.some(item => item.sourceName === mediaSourceName)) {
+                // STABILITY DELAY: Wait 2 seconds before requesting settings 
+                // to avoid overwhelming the librist/avformat threads.
+                console.log(`Source "${mediaSourceName}" found. Waiting 2s for safety...`);
+                
+                setTimeout(() => {
+                    safeSend({ 
+                        "op": 6, 
+                        "d": { 
+                            "requestType": "GetInputSettings", 
+                            "requestId": "getSet", 
+                            "requestData": { "inputName": mediaSourceName } 
+                        } 
+                    });
+                }, 2500); 
+
+            } else {
+                currentSearchIndex++;
+                searchNextScene();
+            }
+            break;
+            
+        case 'GetInputSettings':
+            currentSettings = responseData.inputSettings;
+            // Additional small buffer before the final "heavy" re-init command
+            setTimeout(() => {
+                safeSend({ 
+                    "op": 6, 
+                    "d": { 
+                        "requestType": "SetInputSettings", 
+                        "requestId": "final", 
+                        "requestData": { 
+                            "inputName": mediaSourceName, 
+                            "inputSettings": currentSettings 
+                        } 
+                    } 
+                });
+            }, 2500);
+            break;
+            
+        case 'SetInputSettings':
+            lastRefreshTime = Date.now();
+            console.log("Refresh Complete (Safe Delay Mode)");
+            setTimeout(() => obs?.close(), 2500);
+            break;
+    }
+}
+
+function resetRefreshState() {
+    isRefreshing = false;
+    currentSearchIndex = 0;
+}
+
+function updateStatus(m) { console.log("Status:", m); }
+
+// Initialize
+connectStats();
+</script>
+</body>
+</html>
